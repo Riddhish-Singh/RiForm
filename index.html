@@ -621,13 +621,30 @@
              `;
         }
 
-function renderViewerQuestion(q, form, theme) {
+        // --- Handle Other Selection Visibility ---
+        window.handleOtherSelection = (qId, isOther) => {
+            const container = document.getElementById(`other-input-container-${qId}`);
+            const input = document.getElementById(`other-input-${qId}`);
+            
+            if (!container || !input) return;
+
+            if (isOther) {
+                container.classList.remove('hidden');
+                input.required = true;
+                input.focus();
+            } else {
+                container.classList.add('hidden');
+                input.required = false;
+                input.value = ''; // Clear text if they switch away
+            }
+        };
+
+        function renderViewerQuestion(q, form, theme) {
             let inputHtml = '';
             
             if (q.type === 'text') {
                 inputHtml = `<input type="text" name="${q.id}" class="w-full p-3 border-b-2 bg-gray-50 focus:bg-white outline-none transition ${theme.border} focus:border-opacity-100 border-opacity-20" placeholder="Your answer" ${q.required ? 'required' : ''}>`;
             } else if (q.type === 'choice') {
-                // Modified to handle "Other"
                 inputHtml = `<div class="space-y-2">
                     ${q.options.map((opt, i) => {
                         const isOther = opt.toLowerCase() === 'other';
@@ -954,7 +971,18 @@ function renderViewerQuestion(q, form, theme) {
              updateForm({ questions: arr });
         };
 
-window.submitForm = (e) => {
+        window.removeOption = (qId, idx) => {
+             const arr = state.currentForm.questions.map(q => {
+                 if (q.id === qId) return { ...q, options: q.options.filter((_, i) => i !== idx) };
+                 return q;
+             });
+             updateForm({ questions: arr });
+        };
+        
+        window.setCorrectAnswer = (qId, val) => window.updateQuestion(qId, 'correctAnswer', val);
+        
+        // Viewer Actions
+        window.submitForm = (e) => {
             e.preventDefault();
             const fd = new FormData(e.target);
             const rawAnswers = {};
@@ -1058,7 +1086,7 @@ window.submitForm = (e) => {
         };
 
         // --- Export Logic ---
-function generateFormHTML(f) {
+        function generateFormHTML(f) {
             // We convert functions to strings to embed them in the downloaded HTML
             const renderQStr = renderViewerQuestion.toString();
             const handleOtherStr = window.handleOtherSelection.toString();
