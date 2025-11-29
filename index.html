@@ -621,19 +621,38 @@
              `;
         }
 
-        function renderViewerQuestion(q, form, theme) {
+function renderViewerQuestion(q, form, theme) {
             let inputHtml = '';
             
             if (q.type === 'text') {
                 inputHtml = `<input type="text" name="${q.id}" class="w-full p-3 border-b-2 bg-gray-50 focus:bg-white outline-none transition ${theme.border} focus:border-opacity-100 border-opacity-20" placeholder="Your answer" ${q.required ? 'required' : ''}>`;
             } else if (q.type === 'choice') {
+                // Modified to handle "Other"
                 inputHtml = `<div class="space-y-2">
-                    ${q.options.map((opt, i) => `
-                        <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer transition hover:bg-gray-50">
-                            <input type="radio" name="${q.id}" value="${escapeHtml(opt)}" class="text-teal-600 focus:ring-teal-500" ${q.required ? 'required' : ''}>
-                            <span class="text-gray-700">${escapeHtml(opt)}</span>
-                        </label>
-                    `).join('')}
+                    ${q.options.map((opt, i) => {
+                        const isOther = opt.toLowerCase() === 'other';
+                        return `
+                        <div>
+                            <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer transition hover:bg-gray-50">
+                                <input type="radio" 
+                                       name="${q.id}" 
+                                       value="${escapeHtml(opt)}" 
+                                       class="text-teal-600 focus:ring-teal-500" 
+                                       onchange="window.handleOtherSelection('${q.id}', ${isOther})"
+                                       ${q.required ? 'required' : ''}>
+                                <span class="text-gray-700">${escapeHtml(opt)}</span>
+                            </label>
+                            ${isOther ? `
+                                <div id="other-input-container-${q.id}" class="hidden ml-8 mt-2">
+                                    <input type="text" 
+                                           name="${q.id}_other_text" 
+                                           id="other-input-${q.id}"
+                                           class="w-full bg-transparent border-b border-gray-400 text-gray-700 placeholder-gray-400 outline-none focus:border-teal-600 py-1 transition" 
+                                           placeholder="Please specify...">
+                                </div>
+                            ` : ''}
+                        </div>
+                    `}).join('')}
                 </div>`;
             } else if (q.type === 'likert') {
                  inputHtml = `<div class="space-y-2">
