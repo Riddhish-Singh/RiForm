@@ -954,34 +954,37 @@ function renderViewerQuestion(q, form, theme) {
              updateForm({ questions: arr });
         };
 
-        window.removeOption = (qId, idx) => {
-             const arr = state.currentForm.questions.map(q => {
-                 if (q.id === qId) return { ...q, options: q.options.filter((_, i) => i !== idx) };
-                 return q;
-             });
-             updateForm({ questions: arr });
-        };
-        
-        window.setCorrectAnswer = (qId, val) => window.updateQuestion(qId, 'correctAnswer', val);
-        
-        // Viewer Actions
-        window.submitForm = (e) => {
+window.submitForm = (e) => {
             e.preventDefault();
             const fd = new FormData(e.target);
-            const answers = {};
-            for(let [k,v] of fd.entries()) answers[k] = v;
+            const rawAnswers = {};
+            for(let [k,v] of fd.entries()) rawAnswers[k] = v;
             
             const f = state.currentForm || state.forms.find(x => x.id === state.activeFormId);
+            
+            // Process Answers (Merge "Other" text)
+            const finalAnswers = {};
+            f.questions.forEach(q => {
+                let ans = rawAnswers[q.id];
+                
+                // If the answer is "Other" and there is text input, combine them
+                if (ans === 'Other' && rawAnswers[`${q.id}_other_text`]) {
+                    ans = `Other: ${rawAnswers[`${q.id}_other_text`]}`;
+                }
+                
+                if (ans) finalAnswers[q.id] = ans;
+            });
+
             let score = 0;
             if(f.settings.isQuiz) {
                 f.questions.forEach(q => {
-                    if(q.correctAnswer && answers[q.id] === q.correctAnswer) score += (q.points || 0);
+                    if(q.correctAnswer && finalAnswers[q.id] === q.correctAnswer) score += (q.points || 0);
                 });
             }
             
             const response = {
                 formId: f.id,
-                answers,
+                answers: finalAnswers,
                 score,
                 userId: f.settings.anonymous ? 'anon' : state.user.uid,
                 submittedAt: Date.now()
@@ -1055,7 +1058,11 @@ function renderViewerQuestion(q, form, theme) {
         };
 
         // --- Export Logic ---
-        function generateFormHTML(f) {
+function generateFormHTML(f) {
+            // We convert functions to strings to embed them in the downloaded HTML
+            const renderQStr = renderViewerQuestion.toString();
+            const handleOtherStr = window.handleOtherSelection.toString();
+            
             return `
 <!DOCTYPE html>
 <html lang="en">
@@ -1079,7 +1086,10 @@ function renderViewerQuestion(q, form, theme) {
         ];
         
         const escapeHtml = ${escapeHtml.toString()};
-        const renderViewerQuestion = ${renderViewerQuestion.toString()};
+        
+        // Embedded Logic Functions
+        const renderViewerQuestion = ${renderQStr};
+        window.handleOtherSelection = ${handleOtherStr};
         
         function renderForm() {
             const theme = THEMES.find(t => t.id === formData.theme) || THEMES[0];
@@ -1138,9 +1148,20 @@ function renderViewerQuestion(q, form, theme) {
         function submitForm(e) {
             e.preventDefault();
             const fd = new FormData(e.target);
-            const answers = {};
-            for(let [k,v] of fd.entries()) answers[k] = v;
-            alert("Form submitted! Check console for data. (Exported version)");
+            const rawAnswers = {};
+            for(let [k,v] of fd.entries()) rawAnswers[k] = v;
+            
+            const finalAnswers = {};
+            formData.questions.forEach(q => {
+                let ans = rawAnswers[q.id];
+                if (ans === 'Other' && rawAnswers[\`\${q.id}_other_text\`]) {
+                    ans = 'Other: ' + rawAnswers[\`\${q.id}_other_text\`];
+                }
+                if(ans) finalAnswers[q.id] = ans;
+            });
+
+            console.log("Submission:", finalAnswers);
+            alert("Form submitted! Check console for data.");
         }
         renderForm();
     <\/script>
