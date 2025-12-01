@@ -3,24 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RiForm Builder (Auto Excel Download)</title>
+    <title>RiForm Builder (Safe Mode)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    
     <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        teal: { 50: '#f0fdfa', 100: '#ccfbf1', 600: '#0d9488', 700: '#0f766e', 900: '#134e4a' },
-                        indigo: { 50: '#eef2ff', 600: '#4f46e5', 700: '#4338ca', 900: '#312e81' },
-                        rose: { 50: '#fff1f2', 600: '#e11d48', 700: '#be123c', 900: '#881337' },
-                        amber: { 50: '#fffbeb', 600: '#d97706', 700: '#b45309', 900: '#78350f' },
-                        slate: { 50: '#f8fafc', 800: '#1e293b', 900: '#0f172a' }
+        try {
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            teal: { 50: '#f0fdfa', 100: '#ccfbf1', 600: '#0d9488', 700: '#0f766e', 900: '#134e4a' },
+                            indigo: { 50: '#eef2ff', 600: '#4f46e5', 700: '#4338ca', 900: '#312e81' },
+                            rose: { 50: '#fff1f2', 600: '#e11d48', 700: '#be123c', 900: '#881337' },
+                            amber: { 50: '#fffbeb', 600: '#d97706', 700: '#b45309', 900: '#78350f' },
+                            slate: { 50: '#f8fafc', 800: '#1e293b', 900: '#0f172a' }
+                        }
                     }
                 }
             }
-        }
+        } catch(e) { console.warn("Tailwind config failed", e); }
     </script>
+    
     <style>
         /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
@@ -36,13 +40,21 @@
     <div id="app" class="flex-1 flex flex-col h-full overflow-hidden relative">
         <div id="loading" class="absolute inset-0 flex items-center justify-center bg-gray-50 z-50">
             <div class="text-center">
-                <div class="text-teal-600 animate-spin mb-4 mx-auto w-8 h-8 border-4 border-teal-600 border-t-transparent rounded-full"></div>
-                <div class="text-gray-500 font-medium">Loading...</div>
+                <div class="text-teal-600 mb-4 mx-auto text-4xl font-bold">...</div>
+                <div class="text-gray-500 font-medium">Loading RiForm...</div>
             </div>
         </div>
     </div>
 
     <script>
+        // Global Error Handler to catch "Loading" freezes
+        window.onerror = function(msg, url, line) {
+            alert("Error: " + msg + "\nLine: " + line);
+            // Force remove loading screen so you can see what happened
+            const el = document.getElementById('loading');
+            if(el) el.style.display = 'none';
+        };
+
         // --- Configuration & Storage ---
         const STORAGE_KEYS = {
             FORMS: 'formflow_local_forms',
@@ -54,8 +66,8 @@
         // --- State Management ---
         const state = {
             user: { uid: 'local_user', name: 'User' },
-            view: 'roleSelection', // Start at role selection
-            role: null, // 'admin' or 'participant'
+            view: 'roleSelection', 
+            role: null, 
             activeFormId: null,
             forms: [],
             currentForm: null, 
@@ -116,6 +128,7 @@
 
         // --- Init Function ---
         function initApp() {
+            // Delay slightly to allow styles to load
             setTimeout(() => {
                 const loadingEl = document.getElementById('loading');
                 if (loadingEl) loadingEl.style.display = 'none';
@@ -123,11 +136,13 @@
             }, 500); 
         }
 
+        // Start App
         initApp();
 
         // --- Routing / View Rendering ---
         function render() {
             const appDiv = document.getElementById('app');
+            if(!appDiv) return;
             appDiv.innerHTML = ''; 
 
             if (state.view === 'roleSelection') renderRoleSelection(appDiv);
@@ -136,7 +151,10 @@
             else if (state.view === 'preview') renderViewer(appDiv, state.role === 'admin'); 
             else if (state.view === 'results') renderResults(appDiv);
 
-            lucide.createIcons();
+            // Safe icon loading
+            if(window.lucide) {
+                try { lucide.createIcons(); } catch(e) {}
+            }
             
             if (state.view === 'preview') {
                 window.evaluateLogic();
@@ -981,7 +999,7 @@
         
         window.setCorrectAnswer = (qId, val) => window.updateQuestion(qId, 'correctAnswer', val);
         
-        // Viewer Actions
+        // Viewer Actions - AUTO DOWNLOAD EXCEL ADDED HERE
         window.submitForm = (e) => {
             e.preventDefault();
             const fd = new FormData(e.target);
@@ -1017,7 +1035,7 @@
             
             saveLocalResponse(response);
 
-            // --- START: GENERATE EXCEL (CSV) FOR USER ---
+            // --- AUTO GENERATE EXCEL (CSV) FOR USER ---
             try {
                 const headers = ['Date Submitted', 'Form Title'];
                 if (f.settings.isQuiz) headers.push('Score');
@@ -1056,7 +1074,6 @@
                 console.error("Error creating excel file:", err);
                 alert("Submission saved, but Excel download failed.");
             }
-            // --- END: GENERATE EXCEL ---
             
             document.getElementById('app').innerHTML = `
                 <div class="h-full flex items-center justify-center bg-gray-50">
@@ -1070,10 +1087,10 @@
                     </div>
                 </div>
             `;
-            lucide.createIcons();
+            if(window.lucide) lucide.createIcons();
         };
 
-        // --- NEW: Excel Export Function ---
+        // --- NEW: Excel Export Function (Admin) ---
         window.downloadResponsesCSV = () => {
             const f = state.currentForm;
             const responses = state.responses;
@@ -1099,7 +1116,7 @@
                 return row;
             });
 
-            // CSV Generation (handling quotes/commas)
+            // CSV Generation
             const escape = (val) => {
                 const str = String(val || '');
                 if (str.includes(',') || str.includes('"') || str.includes('\n')) {
@@ -1126,111 +1143,54 @@
 
         // --- Export Logic ---
         function generateFormHTML(f) {
-            // We convert functions to strings to embed them in the downloaded HTML
             const renderQStr = renderViewerQuestion.toString();
             const handleOtherStr = window.handleOtherSelection.toString();
             
-            return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${escapeHtml(f.title)}</title>
-    <script src="https://cdn.tailwindcss.com"><\/script>
-    <script src="https://unpkg.com/lucide@latest"><\/script>
-</head>
-<body class="bg-gray-100 font-sans text-gray-800">
-    <div id="form-container"></div>
-    <script>
-        const formData = ${JSON.stringify(f)};
-        const THEMES = [
-            { id: 'teal', primary: 'bg-teal-600', secondary: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-900', hover: 'hover:bg-teal-700' },
-            { id: 'indigo', primary: 'bg-indigo-600', secondary: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-900', hover: 'hover:bg-indigo-700' },
-            { id: 'rose', primary: 'bg-rose-600', secondary: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-900', hover: 'hover:bg-rose-700' },
-            { id: 'amber', primary: 'bg-amber-600', secondary: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-900', hover: 'hover:bg-amber-700' },
-            { id: 'slate', primary: 'bg-slate-800', secondary: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-900', hover: 'hover:bg-slate-900' }
-        ];
-        
-        const escapeHtml = ${escapeHtml.toString()};
-        
-        // Embedded Logic Functions
-        const renderViewerQuestion = ${renderQStr};
-        window.handleOtherSelection = ${handleOtherStr};
-        
-        function renderForm() {
-            const theme = THEMES.find(t => t.id === formData.theme) || THEMES[0];
-            const container = document.getElementById('form-container');
-            const bgStyle = formData.backgroundImage ? \`background-image: url('\${formData.backgroundImage}'); background-size: cover; background-position: center; background-attachment: fixed;\` : formData.backgroundColor ? \`background-color: \${formData.backgroundColor};\` : '';
-            const bgClass = (!formData.backgroundImage && !formData.backgroundColor) ? theme.secondary : '';
-
-            container.innerHTML = \`
-                <div class="min-h-screen \${bgClass} w-full overflow-y-auto" style="\${bgStyle}">
-                    <div class="max-w-3xl mx-auto p-4 md:p-8 space-y-4">
-                        <div class="bg-white rounded-lg shadow-sm border-t-8 p-8" style="border-top-color: \${theme.primary.replace('bg-', '') === 'bg-slate-800' ? '#1e293b' : ''}" class="\${theme.primary}">
-                             <div class="h-2 absolute top-0 left-0 w-full rounded-t-lg -mt-2 \${theme.primary}"></div>
-                            <h1 class="text-3xl font-bold text-gray-900 mb-2">\${escapeHtml(formData.title)}</h1>
-                            <p class="text-gray-600 whitespace-pre-wrap">\${escapeHtml(formData.description)}</p>
-                        </div>
-                        <form id="public-form" onsubmit="submitForm(event)" onchange="evaluateLogic()">
-                            <div class="space-y-4">
-                                \${formData.questions.map(q => renderViewerQuestion(q, formData, theme)).join('')}
-                            </div>
-                            <div class="pt-8 pb-12">
-                                <button type="submit" class="w-full sm:w-auto px-8 py-3 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 \${theme.primary} \${theme.hover}">
-                                    Submit Form
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            \`;
-            lucide.createIcons();
-            evaluateLogic();
-        }
-
-        function evaluateLogic() {
-            const fd = new FormData(document.getElementById('public-form'));
-            const answers = {};
-            for(let [k,v] of fd.entries()) answers[k] = v;
-
-            formData.questions.forEach(q => {
-                const container = document.getElementById(\`question-container-\${q.id}\`);
-                if(!container) return;
-                if (q.visibleIf) {
-                    const { questionId, value } = q.visibleIf;
-                    if (answers[questionId] === value) {
-                        container.style.display = 'block';
-                        container.querySelectorAll('input, select, textarea').forEach(el => el.disabled = false);
-                    } else {
-                        container.style.display = 'none';
-                        container.querySelectorAll('input, select, textarea').forEach(el => el.disabled = true);
-                    }
-                } else {
-                    container.style.display = 'block';
-                }
-            });
-        }
-
-        function submitForm(e) {
-            e.preventDefault();
-            const fd = new FormData(e.target);
-            const rawAnswers = {};
-            for(let [k,v] of fd.entries()) rawAnswers[k] = v;
+            // Note: Simplied template to avoid potential nesting syntax errors during copy-paste
+            let html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeHtml(f.title)}</title><script src="https://cdn.tailwindcss.com"><\/script><script src="https://unpkg.com/lucide@latest"><\/script></head><body class="bg-gray-100 font-sans text-gray-800"><div id="form-container"></div><script>const formData = ${JSON.stringify(f)};const THEMES=[{id:'teal',primary:'bg-teal-600',secondary:'bg-teal-50',border:'border-teal-200',text:'text-teal-900',hover:'hover:bg-teal-700'},{id:'indigo',primary:'bg-indigo-600',secondary:'bg-indigo-50',border:'border-indigo-200',text:'text-indigo-900',hover:'hover:bg-indigo-700'},{id:'rose',primary:'bg-rose-600',secondary:'bg-rose-50',border:'border-rose-200',text:'text-rose-900',hover:'hover:bg-rose-700'},{id:'amber',primary:'bg-amber-600',secondary:'bg-amber-50',border:'border-amber-200',text:'text-amber-900',hover:'hover:bg-amber-700'},{id:'slate',primary:'bg-slate-800',secondary:'bg-slate-50',border:'border-slate-200',text:'text-slate-900',hover:'hover:bg-slate-900'}];const escapeHtml = (unsafe) => { if (typeof unsafe !== 'string') return ''; return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); };`;
             
-            const finalAnswers = {};
-            formData.questions.forEach(q => {
-                let ans = rawAnswers[q.id];
-                if (ans === 'Other' && rawAnswers[\`\${q.id}_other_text\`]) {
-                    ans = 'Other: ' + rawAnswers[\`\${q.id}_other_text\`];
-                }
-                if(ans) finalAnswers[q.id] = ans;
-            });
-
-            console.log("Submission:", finalAnswers);
-            alert("Form submitted! Check console for data.");
+            // Append function strings safely
+            html += `const renderViewerQuestion = ${renderQStr};`;
+            html += `window.handleOtherSelection = ${handleOtherStr};`;
+            
+            html += `function renderForm(){const theme=THEMES.find(t=>t.id===formData.theme)||THEMES[0];const container=document.getElementById('form-container');const bgStyle=formData.backgroundImage?\`background-image: url('\${formData.backgroundImage}'); background-size: cover; background-position: center; background-attachment: fixed;\`:formData.backgroundColor?\`background-color: \${formData.backgroundColor};\`:'';const bgClass=(!formData.backgroundImage&&!formData.backgroundColor)?theme.secondary:'';container.innerHTML=\`<div class="min-h-screen \${bgClass} w-full overflow-y-auto" style="\${bgStyle}"><div class="max-w-3xl mx-auto p-4 md:p-8 space-y-4"><div class="bg-white rounded-lg shadow-sm border-t-8 p-8" style="border-top-color: \${theme.primary.replace('bg-', '') === 'bg-slate-800' ? '#1e293b' : ''}" class="\${theme.primary}"><div class="h-2 absolute top-0 left-0 w-full rounded-t-lg -mt-2 \${theme.primary}"></div><h1 class="text-3xl font-bold text-gray-900 mb-2">\${escapeHtml(formData.title)}</h1><p class="text-gray-600 whitespace-pre-wrap">\${escapeHtml(formData.description)}</p></div><form id="public-form" onsubmit="submitForm(event)" onchange="evaluateLogic()"><div class="space-y-4">\${formData.questions.map(q => renderViewerQuestion(q, formData, theme)).join('')}</div><div class="pt-8 pb-12"><button type="submit" class="w-full sm:w-auto px-8 py-3 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 \${theme.primary} \${theme.hover}">Submit Form</button></div></form></div></div>\`;if(window.lucide)lucide.createIcons();evaluateLogic();}function evaluateLogic(){const fd=new FormData(document.getElementById('public-form'));const answers={};for(let [k,v] of fd.entries())answers[k]=v;formData.questions.forEach(q=>{const container=document.getElementById(\`question-container-\${q.id}\`);if(!container)return;if(q.visibleIf){const{questionId,value}=q.visibleIf;if(answers[questionId]===value){container.style.display='block';container.querySelectorAll('input, select, textarea').forEach(el=>el.disabled=false);}else{container.style.display='none';container.querySelectorAll('input, select, textarea').forEach(el=>el.disabled=true);}}else{container.style.display='block';}});}function submitForm(e){e.preventDefault();const fd=new FormData(e.target);const rawAnswers={};for(let [k,v] of fd.entries())rawAnswers[k]=v;const finalAnswers={};formData.questions.forEach(q=>{let ans=rawAnswers[q.id];if(ans==='Other'&&rawAnswers[\`\${q.id}_other_text\`]){ans='Other: '+rawAnswers[\`\${q.id}_other_text\`];}if(ans)finalAnswers[q.id]=ans;});console.log("Submission:",finalAnswers);alert("Form submitted! Check console for data.");}renderForm();<\/script></body></html>`;
+            
+            return html;
         }
-        renderForm();
-    <\/script>
+        
+        window.downloadFormCode = () => {
+            if(state.role !== 'admin') return;
+            const f = state.currentForm;
+            if(!f) return;
+            const htmlContent = generateFormHTML(f);
+            
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${f.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.html`;
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+        
+        window.copyFormCode = () => {
+             if(state.role !== 'admin') return;
+             const f = state.currentForm;
+             if(!f) return;
+             const htmlContent = generateFormHTML(f);
+             
+             const textArea = document.createElement("textarea");
+             textArea.value = htmlContent;
+             textArea.style.position = "fixed";
+             textArea.style.left = "-9999px";
+             document.body.appendChild(textArea);
+             textArea.focus();
+             textArea.select();
+             try { document.execCommand('copy'); alert("Code copied to clipboard!"); } 
+             catch (err) { alert("Unable to copy code."); } 
+             finally { document.body.removeChild(textArea); }
+        };
+
+    </script>
 </body>
 </html>
