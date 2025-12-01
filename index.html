@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RiForm Builder (Secured + Excel Export)</title>
+    <title>RiForm Builder (Auto Excel Download)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script>
@@ -994,12 +994,9 @@
             const finalAnswers = {};
             f.questions.forEach(q => {
                 let ans = rawAnswers[q.id];
-                
-                // If the answer is "Other" and there is text input, combine them
                 if (ans === 'Other' && rawAnswers[`${q.id}_other_text`]) {
                     ans = `Other: ${rawAnswers[`${q.id}_other_text`]}`;
                 }
-                
                 if (ans) finalAnswers[q.id] = ans;
             });
 
@@ -1019,13 +1016,55 @@
             };
             
             saveLocalResponse(response);
+
+            // --- START: GENERATE EXCEL (CSV) FOR USER ---
+            try {
+                const headers = ['Date Submitted', 'Form Title'];
+                if (f.settings.isQuiz) headers.push('Score');
+                f.questions.forEach(q => headers.push(q.title));
+
+                const row = [
+                    new Date().toLocaleString(),
+                    f.title
+                ];
+                if (f.settings.isQuiz) row.push(score);
+                
+                f.questions.forEach(q => {
+                    row.push(finalAnswers[q.id] || '');
+                });
+
+                const escapeCSV = (val) => {
+                    const str = String(val || '');
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        return `"${str.replace(/"/g, '""')}"`;
+                    }
+                    return str;
+                };
+
+                const csvContent = headers.map(escapeCSV).join(',') + '\n' + row.map(escapeCSV).join(',');
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", `${f.title.replace(/[^a-z0-9]/gi, '_')}_MyResponse.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+            } catch (err) {
+                console.error("Error creating excel file:", err);
+                alert("Submission saved, but Excel download failed.");
+            }
+            // --- END: GENERATE EXCEL ---
             
             document.getElementById('app').innerHTML = `
                 <div class="h-full flex items-center justify-center bg-gray-50">
                     <div class="bg-white p-8 rounded-lg shadow-lg text-center">
                         <i data-lucide="check-circle" class="w-16 h-16 text-green-500 mx-auto mb-4"></i>
                         <h2 class="text-2xl font-bold text-gray-800">Thank You!</h2>
-                        <p class="text-gray-600 mb-6">Response submitted locally.</p>
+                        <p class="text-gray-600 mb-2">Response submitted locally.</p>
+                        <p class="text-teal-600 text-sm mb-6 font-medium">Your response receipt has been downloaded.</p>
                         ${f.settings.isQuiz ? `<div class="text-4xl font-bold text-gray-900 mb-6">${score} / ${f.questions.reduce((a,q)=>a+(q.points||0),0)}</div>` : ''}
                         <button onclick="window.loadDashboard()" class="text-gray-500 hover:underline">Return Home</button>
                     </div>
@@ -1193,43 +1232,5 @@
         }
         renderForm();
     <\/script>
-</body>
-</html>`;
-        }
-        
-        window.downloadFormCode = () => {
-            if(state.role !== 'admin') return;
-            const f = state.currentForm;
-            if(!f) return;
-            const htmlContent = generateFormHTML(f);
-            
-            const blob = new Blob([htmlContent], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${f.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.html`;
-            a.click();
-            URL.revokeObjectURL(url);
-        };
-        
-        window.copyFormCode = () => {
-             if(state.role !== 'admin') return;
-             const f = state.currentForm;
-             if(!f) return;
-             const htmlContent = generateFormHTML(f);
-             
-             const textArea = document.createElement("textarea");
-             textArea.value = htmlContent;
-             textArea.style.position = "fixed";
-             textArea.style.left = "-9999px";
-             document.body.appendChild(textArea);
-             textArea.focus();
-             textArea.select();
-             try { document.execCommand('copy'); alert("Code copied to clipboard!"); } 
-             catch (err) { alert("Unable to copy code."); } 
-             finally { document.body.removeChild(textArea); }
-        };
-
-    </script>
 </body>
 </html>
