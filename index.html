@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RiForm Builder v2.0</title>
+    <title>RiForm Builder v3.0 Ultimate</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
@@ -34,7 +34,6 @@
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Range Slider Styling */
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
             height: 20px; width: 20px;
@@ -48,6 +47,14 @@
             width: 100%; height: 4px;
             cursor: pointer; background: #e2e8f0; border-radius: 2px;
         }
+        
+        /* Signature Pad */
+        canvas.signature-pad {
+            touch-action: none;
+            cursor: crosshair;
+            background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans text-gray-800 h-screen overflow-hidden flex flex-col">
@@ -56,7 +63,7 @@
         <div id="loading" class="absolute inset-0 flex items-center justify-center bg-gray-50 z-50">
             <div class="text-center">
                 <div class="text-teal-600 mb-4 mx-auto text-4xl font-bold animate-bounce">...</div>
-                <div class="text-gray-500 font-medium">Loading RiForm v2.0...</div>
+                <div class="text-gray-500 font-medium">Loading RiForm v3.0...</div>
             </div>
         </div>
     </div>
@@ -71,11 +78,11 @@
 
         // --- Configuration & Storage ---
         const STORAGE_KEYS = {
-            FORMS: 'formflow_local_forms',
-            RESPONSES: 'formflow_local_responses'
+            FORMS: 'riform_v3_forms',
+            RESPONSES: 'riform_v3_responses'
         };
 
-        const ADMIN_PASSWORD = 'hijikilio';
+        const ADMIN_PASSWORD = '123';
 
         // --- State Management ---
         const state = {
@@ -88,7 +95,7 @@
             responses: [], 
             builderTab: 'questions', 
             logicMenuOpenId: null, 
-            loading: true
+            timerInterval: null
         };
 
         // --- Constants ---
@@ -108,6 +115,8 @@
             { id: 'range', label: 'Slider Range', icon: 'sliders' },
             { id: 'rating', label: 'Star Rating', icon: 'star' },
             { id: 'date', label: 'Date', icon: 'calendar' },
+            { id: 'file', label: 'File Upload', icon: 'upload-cloud' }, // NEW
+            { id: 'signature', label: 'Signature', icon: 'pen-tool' }, // NEW
             { id: 'likert', label: 'Likert Scale', icon: 'list' },
             { id: 'nps', label: 'NPS Score', icon: 'bar-chart' },
         ];
@@ -116,12 +125,7 @@
         const generateId = () => Math.random().toString(36).substr(2, 9);
         const escapeHtml = (unsafe) => {
             if (typeof unsafe !== 'string') return '';
-            return unsafe
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
+            return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         }
         
         // --- Local Storage Helpers ---
@@ -140,7 +144,11 @@
         function saveLocalResponse(response) {
             const responses = getLocalResponses();
             responses.push(response);
-            localStorage.setItem(STORAGE_KEYS.RESPONSES, JSON.stringify(responses));
+            try {
+                localStorage.setItem(STORAGE_KEYS.RESPONSES, JSON.stringify(responses));
+            } catch(e) {
+                alert("Storage Full! Cannot save response including large files.");
+            }
         }
 
         // --- Init Function ---
@@ -165,6 +173,7 @@
             else if (state.view === 'builder') renderBuilder(appDiv);
             else if (state.view === 'preview') renderViewer(appDiv, state.role === 'admin'); 
             else if (state.view === 'results') renderResults(appDiv);
+            else if (state.view === 'access_lock') renderAccessLock(appDiv);
 
             if(window.lucide) {
                 try { lucide.createIcons(); } catch(e) {}
@@ -173,6 +182,7 @@
             if (state.view === 'preview') {
                 window.evaluateLogic();
                 window.updateProgressBar();
+                window.initSignaturePads(); // Init canvas
             }
         }
 
@@ -183,9 +193,9 @@
                     <div class="mb-8 text-center">
                         <div class="flex items-center justify-center gap-2 mb-2">
                              <i data-lucide="layout" class="w-10 h-10 text-teal-600"></i>
-                             <h1 class="text-4xl font-bold text-gray-800">RiForm</h1>
+                             <h1 class="text-4xl font-bold text-gray-800">RiForm v3</h1>
                         </div>
-                        <p class="text-gray-500">Form Builder v2.0</p>
+                        <p class="text-gray-500">Enhanced Builder</p>
                     </div>
                     
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl w-full">
@@ -202,7 +212,7 @@
                                 <i data-lucide="shield" class="w-6 h-6 text-purple-600"></i>
                             </div>
                             <h2 class="text-xl font-bold text-gray-800 mb-2">Admin</h2>
-                            <p class="text-gray-500 text-sm">I want to build forms and view analytics.</p>
+                            <p class="text-gray-500 text-sm">Create forms. (Password: 123)</p>
                         </button>
                     </div>
 
@@ -251,6 +261,7 @@
 
         // --- Dashboard View ---
         function mountDashboard() {
+            if(state.timerInterval) clearInterval(state.timerInterval);
             state.forms = getLocalForms().sort((a, b) => b.updatedAt - a.updatedAt);
             state.view = 'dashboard';
             render();
@@ -302,18 +313,25 @@
                             : '';
                     const bgClass = (!form.backgroundImage && !form.backgroundColor) ? theme.primary : '';
                     
-                    const clickAction = isAdmin ? `window.openBuilder('${form.id}')` : `window.openPreview('${form.id}')`;
+                    // Logic to check lock
+                    const clickAction = isAdmin ? `window.openBuilder('${form.id}')` : `window.checkAccess('${form.id}')`;
 
                     html += `
                         <div onclick="${clickAction}" class="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition cursor-pointer group flex flex-col h-48 fade-in relative overflow-hidden">
                             <div class="h-2 w-full rounded-t-xl ${bgClass}" style="${bgStyle}"></div>
                             <div class="p-5 flex-1">
                                 <div class="flex justify-between items-start">
-                                    <h3 class="font-semibold text-lg text-gray-800 truncate pr-4">${escapeHtml(form.title)}</h3>
+                                    <h3 class="font-semibold text-lg text-gray-800 truncate pr-4 flex items-center gap-1">
+                                        ${form.settings.accessPassword ? '<i data-lucide="lock" class="w-3 h-3 text-red-500"></i>' : ''}
+                                        ${escapeHtml(form.title)}
+                                    </h3>
                                     ${form.settings.isQuiz ? '<span class="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-medium">Quiz</span>' : ''}
                                 </div>
                                 <p class="text-gray-500 text-sm mt-1 line-clamp-2">${escapeHtml(form.description)}</p>
-                                <div class="mt-4 text-xs text-gray-400">Updated ${dateStr}</div>
+                                <div class="mt-4 text-xs text-gray-400 flex gap-2">
+                                    <span>Updated ${dateStr}</span>
+                                    ${form.settings.timeLimit ? `<span>• ${form.settings.timeLimit}m limit</span>` : ''}
+                                </div>
                             </div>
                             
                             ${isAdmin ? `
@@ -340,6 +358,44 @@
             container.innerHTML = html;
         }
 
+        // --- Password Check View ---
+        function renderAccessLock(container) {
+            container.innerHTML = `
+                <div class="flex items-center justify-center h-full">
+                    <div class="bg-white p-8 rounded-lg shadow-lg border-t-4 border-red-500 max-w-sm w-full">
+                        <h2 class="text-xl font-bold mb-2">Restricted Access</h2>
+                        <p class="text-gray-500 text-sm mb-4">This form is password protected.</p>
+                        <input type="password" id="form-access-pass" class="w-full border p-2 rounded mb-4" placeholder="Password">
+                        <div class="flex justify-between">
+                            <button onclick="window.loadDashboard()" class="text-gray-500">Cancel</button>
+                            <button onclick="window.verifyFormAccess()" class="bg-red-500 text-white px-4 py-2 rounded">Unlock</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.checkAccess = (id) => {
+            const form = getLocalForms().find(f => f.id === id);
+            if (form.settings.accessPassword) {
+                state.activeFormId = id;
+                state.view = 'access_lock';
+                render();
+            } else {
+                window.openPreview(id);
+            }
+        };
+
+        window.verifyFormAccess = () => {
+             const form = getLocalForms().find(f => f.id === state.activeFormId);
+             const input = document.getElementById('form-access-pass').value;
+             if (input === form.settings.accessPassword) {
+                 window.openPreview(state.activeFormId);
+             } else {
+                 alert("Wrong password");
+             }
+        };
+
         // --- Builder View (Admin Only) ---
         function mountBuilder(formId) {
             if (state.role !== 'admin') {
@@ -354,7 +410,7 @@
             
             const form = getLocalForms().find(f => f.id === formId);
             if (form) {
-                // Backward compatibility for new properties
+                // Backward compatibility
                 if(!form.settings.thankYouMessage) form.settings.thankYouMessage = '';
                 state.currentForm = form;
                 render();
@@ -386,8 +442,7 @@
                             <button onclick="window.setBuilderTab('settings')" class="px-4 py-1.5 rounded-md text-sm font-medium transition ${state.builderTab === 'settings' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-900'}">Settings</button>
                         </div>
                         <div class="flex gap-2">
-                             <button onclick="window.copyFormCode()" class="flex items-center gap-2 px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 transition border border-gray-200" title="Copy HTML Code"><i data-lucide="copy" class="w-4 h-4"></i> <span class="hidden sm:inline">Copy</span></button>
-                             <button onclick="window.downloadFormCode()" class="flex items-center gap-2 px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 transition border border-gray-200" title="Download HTML File"><i data-lucide="download" class="w-4 h-4"></i> <span class="hidden sm:inline">Download</span></button>
+                             <button onclick="window.downloadFormCode()" class="flex items-center gap-2 px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 transition border border-gray-200" title="Download HTML File"><i data-lucide="download" class="w-4 h-4"></i> <span class="hidden sm:inline">Export</span></button>
                              <button onclick="window.openPreview('${f.id}')" class="flex items-center gap-2 px-4 py-2 rounded-md text-white shadow-sm transition ${theme.primary} ${theme.hover}"><i data-lucide="play" class="w-4 h-4"></i> Preview</button>
                         </div>
                     </div>
@@ -448,27 +503,6 @@
                                 `).join('')}
                             </div>
                         </div>
-
-                        <div class="bg-white rounded-lg shadow p-6">
-                            <h2 class="text-xl font-semibold mb-4 flex items-center gap-2"><i data-lucide="image" class="w-5 h-5"></i> Custom Background</h2>
-                            <div class="space-y-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Background Color</label>
-                                    <div class="flex items-center gap-3">
-                                        <input type="color" value="${form.backgroundColor || '#ffffff'}" onchange="window.updateForm({ backgroundColor: this.value })" class="h-10 w-16 p-1 rounded border border-gray-300 cursor-pointer">
-                                        <span class="text-sm text-gray-500">${form.backgroundColor || 'Default'}</span>
-                                        <button onclick="window.updateForm({ backgroundColor: null })" class="text-xs text-red-500 hover:underline ml-auto">Reset</button>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Background Image URL</label>
-                                    <div class="flex gap-2">
-                                        <input type="text" value="${escapeHtml(form.backgroundImage || '')}" onchange="window.updateForm({ backgroundImage: this.value })" class="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-1 focus:ring-teal-500" placeholder="https://source.unsplash.com/random/1920x1080">
-                                        <button onclick="window.updateForm({ backgroundImage: null })" class="p-2 text-gray-400 hover:text-red-500 border border-gray-200 rounded"><i data-lucide="x" class="w-4 h-4"></i></button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 `;
             } else {
@@ -479,6 +513,19 @@
                          ${renderToggle('Accepting Responses', 'Allow users to submit', form.settings.active, 'active')}
                          ${renderToggle('Anonymous Responses', 'Don\'t collect user IDs', form.settings.anonymous, 'anonymous')}
                          
+                         <div class="pt-4 border-t border-gray-100">
+                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-900 mb-1">Time Limit (Minutes)</label>
+                                    <input type="number" min="1" value="${form.settings.timeLimit || ''}" onchange="window.updateFormSetting('timeLimit', this.value)" class="w-full p-2 border border-gray-300 rounded focus:ring-teal-500" placeholder="No limit">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-900 mb-1">Access Password</label>
+                                    <input type="text" value="${form.settings.accessPassword || ''}" onchange="window.updateFormSetting('accessPassword', this.value)" class="w-full p-2 border border-gray-300 rounded focus:ring-teal-500" placeholder="Optional lock">
+                                </div>
+                             </div>
+                         </div>
+
                          <div class="pt-4 border-t border-gray-100">
                              <label class="block text-sm font-medium text-gray-900 mb-2">Custom Thank You Message</label>
                              <textarea 
@@ -552,11 +599,6 @@
                                  </select>
                              </div>
                              
-                             <div class="flex items-center gap-2">
-                                <i data-lucide="image" class="w-4 h-4 text-gray-400"></i>
-                                <input value="${escapeHtml(q.mediaUrl || '')}" onchange="window.updateQuestion('${q.id}', 'mediaUrl', this.value)" class="flex-1 bg-transparent text-sm border-b border-gray-200 focus:border-gray-800 outline-none py-1 text-gray-600 placeholder-gray-300" placeholder="Paste image URL here (optional)" />
-                             </div>
-
                              ${optionsHtml}
                              
                              <div class="pt-4 border-t border-gray-100 flex items-center justify-between gap-4">
@@ -628,38 +670,31 @@
              }
              
              const theme = THEMES.find(t => t.id === f.theme) || THEMES[0];
-             
-             const bgStyle = f.backgroundImage 
-                ? `background-image: url('${f.backgroundImage}'); background-size: cover; background-position: center; background-attachment: fixed;` 
-                : f.backgroundColor 
-                    ? `background-color: ${f.backgroundColor};` 
-                    : '';
+             const bgStyle = f.backgroundImage ? `background-image: url('${f.backgroundImage}'); background-size: cover;` : f.backgroundColor ? `background-color: ${f.backgroundColor};` : '';
              const bgClass = (!f.backgroundImage && !f.backgroundColor) ? theme.secondary : '';
              
+             // Timer Logic
+             let timerHtml = '';
+             if (!isPreview && f.settings.timeLimit && f.settings.timeLimit > 0) {
+                 const seconds = f.settings.timeLimit * 60;
+                 window.startTimer(seconds);
+                 timerHtml = `<div id="quiz-timer" class="fixed top-14 right-4 bg-gray-900 text-white px-3 py-1 rounded shadow-lg font-mono z-40">00:00</div>`;
+             }
+
              container.innerHTML = `
                 <div class="min-h-screen ${bgClass} w-full overflow-y-auto transition-colors duration-500" style="${bgStyle}">
-                    
-                    <div class="fixed top-0 left-0 w-full z-30 h-1 bg-gray-200">
-                        <div id="progress-bar" class="h-full ${theme.primary} transition-all duration-500" style="width: 0%"></div>
-                    </div>
-
+                    <div class="fixed top-0 left-0 w-full z-30 h-1 bg-gray-200"><div id="progress-bar" class="h-full ${theme.primary} transition-all duration-500" style="width: 0%"></div></div>
+                    ${timerHtml}
                     ${isPreview ? `
                     <div class="bg-white/90 backdrop-blur border-b border-gray-200 px-4 py-2 flex justify-between items-center sticky top-0 z-20 mt-1">
-                        <div class="flex items-center gap-2">
-                            <span class="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded font-bold">PREVIEW MODE</span>
-                            <span class="text-sm text-gray-500 hidden sm:inline">Admin View</span>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="window.openBuilder('${f.id}')" class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">Edit Form</button>
-                            <button onclick="window.loadDashboard()" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
-                        </div>
+                        <div class="flex items-center gap-2"><span class="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded font-bold">PREVIEW MODE</span></div>
+                        <div class="flex gap-2"><button onclick="window.openBuilder('${f.id}')" class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">Edit</button><button onclick="window.loadDashboard()" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button></div>
                     </div>` : `
                      <button onclick="window.loadDashboard()" class="fixed top-4 right-4 z-50 p-2 bg-white/50 backdrop-blur rounded-full hover:bg-white text-gray-600 shadow-sm"><i data-lucide="x" class="w-6 h-6"></i></button>
                     `}
                     
                     <div class="max-w-3xl mx-auto p-4 md:p-8 space-y-4 pt-12">
-                        <div class="bg-white rounded-lg shadow-sm border-t-8 p-8" style="border-top-color: ${theme.primary.replace('bg-', '') === 'bg-slate-800' ? '#1e293b' : ''};" class="${theme.primary}">
-                             <div class="h-2 absolute top-0 left-0 w-full rounded-t-lg -mt-2 ${theme.primary}"></div>
+                        <div class="bg-white rounded-lg shadow-sm border-t-8 p-8" style="border-top-color: ${theme.primary.replace('bg-', '') === 'bg-slate-800' ? '#1e293b' : ''};">
                             <h1 class="text-3xl font-bold text-gray-900 mb-2">${escapeHtml(f.title)}</h1>
                             <p class="text-gray-600 whitespace-pre-wrap">${escapeHtml(f.description)}</p>
                         </div>
@@ -669,9 +704,7 @@
                                 ${f.questions.map(q => renderViewerQuestion(q, f, theme)).join('')}
                             </div>
                             <div class="pt-8 pb-12">
-                                <button type="submit" class="w-full sm:w-auto px-8 py-3 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 ${theme.primary} ${theme.hover}">
-                                    Submit Form
-                                </button>
+                                <button type="submit" class="w-full sm:w-auto px-8 py-3 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 ${theme.primary} ${theme.hover}">Submit Form</button>
                             </div>
                         </form>
                     </div>
@@ -679,55 +712,103 @@
              `;
         }
 
-        window.handleFormChange = () => {
-            window.evaluateLogic();
-            window.updateProgressBar();
-        }
+        window.startTimer = (duration) => {
+            let timer = duration, minutes, seconds;
+            if(state.timerInterval) clearInterval(state.timerInterval);
+            state.timerInterval = setInterval(function () {
+                minutes = parseInt(timer / 60, 10);
+                seconds = parseInt(timer % 60, 10);
+                minutes = minutes < 10 ? "0" + minutes : minutes;
+                seconds = seconds < 10 ? "0" + seconds : seconds;
+                
+                const el = document.getElementById('quiz-timer');
+                if(el) el.textContent = minutes + ":" + seconds;
+                
+                if (timer < 30 && el) el.classList.add('bg-red-600'); // Urgent
+
+                if (--timer < 0) {
+                    clearInterval(state.timerInterval);
+                    alert("Time's up! Submitting answers.");
+                    document.getElementById('public-form').dispatchEvent(new Event('submit'));
+                }
+            }, 1000);
+        };
+
+        window.handleFormChange = () => { window.evaluateLogic(); window.updateProgressBar(); }
 
         window.updateProgressBar = () => {
             const form = document.getElementById('public-form');
             if(!form) return;
-            const inputs = form.querySelectorAll('input, select, textarea');
             const total = state.currentForm ? state.currentForm.questions.length : 0;
             if (total === 0) return;
-
-            let filled = 0;
-            // Simple logic: check how many questions have a value in FormData
+            // Rough estimate of completion
             const fd = new FormData(form);
             const answeredKeys = new Set();
-            for(let [k,v] of fd.entries()) {
-                if(v && v.trim() !== '') answeredKeys.add(k.split('_')[0]); // handle other_text
-            }
-            
-            filled = answeredKeys.size;
+            for(let [k,v] of fd.entries()) { if(v && v.trim() !== '') answeredKeys.add(k.split('_')[0]); }
+            const filled = answeredKeys.size;
             const pct = Math.min(100, Math.round((filled / total) * 100));
-            
             const bar = document.getElementById('progress-bar');
             if(bar) bar.style.width = `${pct}%`;
         }
 
-        // --- Handle Other Selection Visibility ---
         window.handleOtherSelection = (qId, isOther) => {
             const container = document.getElementById(`other-input-container-${qId}`);
             const input = document.getElementById(`other-input-${qId}`);
-            
             if (!container || !input) return;
-
-            if (isOther) {
-                container.classList.remove('hidden');
-                input.required = true;
-                input.focus();
-            } else {
-                container.classList.add('hidden');
-                input.required = false;
-                input.value = ''; // Clear text if they switch away
-            }
+            if (isOther) { container.classList.remove('hidden'); input.required = true; input.focus(); } 
+            else { container.classList.add('hidden'); input.required = false; input.value = ''; }
         };
 
-        window.updateRangeValue = (qId, val) => {
-            const el = document.getElementById(`range-val-${qId}`);
-            if(el) el.innerText = val;
-        }
+        window.updateRangeValue = (qId, val) => { const el = document.getElementById(`range-val-${qId}`); if(el) el.innerText = val; }
+
+        // --- File Upload Handler ---
+        window.handleFileSelect = (qId, input) => {
+            const file = input.files[0];
+            const max = 500 * 1024; // 500KB limit for localStorage safety
+            if(file.size > max) { alert("File too large (Max 500KB)"); input.value = ""; return; }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById(`file-data-${qId}`).value = e.target.result;
+                document.getElementById(`file-name-${qId}`).innerText = file.name;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        // --- Signature Pad Logic ---
+        window.initSignaturePads = () => {
+            const pads = document.querySelectorAll('.signature-pad');
+            pads.forEach(canvas => {
+                const ctx = canvas.getContext('2d');
+                let writing = false;
+                const hiddenInput = document.getElementById(`sig-data-${canvas.dataset.qid}`);
+
+                const getPos = (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = (e.clientX || e.touches[0].clientX) - rect.left;
+                    const y = (e.clientY || e.touches[0].clientY) - rect.top;
+                    return {x, y};
+                }
+
+                const start = (e) => { writing = true; const {x,y} = getPos(e); ctx.beginPath(); ctx.moveTo(x,y); e.preventDefault(); }
+                const move = (e) => { if(!writing) return; const {x,y} = getPos(e); ctx.lineTo(x,y); ctx.stroke(); e.preventDefault(); }
+                const end = () => { writing = false; if(hiddenInput) hiddenInput.value = canvas.toDataURL(); }
+
+                canvas.addEventListener('mousedown', start);
+                canvas.addEventListener('mousemove', move);
+                canvas.addEventListener('mouseup', end);
+                canvas.addEventListener('touchstart', start);
+                canvas.addEventListener('touchmove', move);
+                canvas.addEventListener('touchend', end);
+            });
+        };
+        
+        window.clearSignature = (qId) => {
+             const canvas = document.querySelector(`canvas[data-qid="${qId}"]`);
+             const ctx = canvas.getContext('2d');
+             ctx.clearRect(0,0, canvas.width, canvas.height);
+             document.getElementById(`sig-data-${qId}`).value = '';
+        };
 
         function renderViewerQuestion(q, form, theme) {
             let inputHtml = '';
@@ -749,66 +830,50 @@
                 `;
             } else if (q.type === 'choice') {
                 let optionsToRender = [...q.options];
-                // Shuffle logic if enabled
-                if (q.shuffleOptions && !form.settings.isAdminView) { // Don't shuffle in admin preview for logic setting sanity
-                    optionsToRender = optionsToRender.sort(() => Math.random() - 0.5);
-                }
-
+                if (q.shuffleOptions && !form.settings.isAdminView) optionsToRender = optionsToRender.sort(() => Math.random() - 0.5);
                 inputHtml = `<div class="space-y-2">
                     ${optionsToRender.map((opt, i) => {
                         const isOther = opt.toLowerCase() === 'other';
                         return `
                         <div>
                             <label class="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer transition hover:bg-gray-50">
-                                <input type="radio" 
-                                       name="${q.id}" 
-                                       value="${escapeHtml(opt)}" 
-                                       class="text-teal-600 focus:ring-teal-500" 
-                                       onchange="window.handleOtherSelection('${q.id}', ${isOther})"
-                                       ${q.required ? 'required' : ''}>
+                                <input type="radio" name="${q.id}" value="${escapeHtml(opt)}" class="text-teal-600 focus:ring-teal-500" onchange="window.handleOtherSelection('${q.id}', ${isOther})" ${q.required ? 'required' : ''}>
                                 <span class="text-gray-700">${escapeHtml(opt)}</span>
                             </label>
-                            ${isOther ? `
-                                <div id="other-input-container-${q.id}" class="hidden ml-8 mt-2">
-                                    <input type="text" 
-                                           name="${q.id}_other_text" 
-                                           id="other-input-${q.id}"
-                                           class="w-full bg-transparent border-b border-gray-400 text-gray-700 placeholder-gray-400 outline-none focus:border-teal-600 py-1 transition" 
-                                           placeholder="Please specify...">
-                                </div>
-                            ` : ''}
+                            ${isOther ? `<div id="other-input-container-${q.id}" class="hidden ml-8 mt-2"><input type="text" name="${q.id}_other_text" id="other-input-${q.id}" class="w-full bg-transparent border-b border-gray-400 text-gray-700 placeholder-gray-400 outline-none focus:border-teal-600 py-1 transition" placeholder="Please specify..."></div>` : ''}
                         </div>
                     `}).join('')}
                 </div>`;
             } else if (q.type === 'likert') {
                  inputHtml = `<div class="space-y-2">
-                    ${q.options.map((opt, i) => `
-                        <label class="flex items-center justify-between p-2 hover:bg-gray-50 rounded cursor-pointer">
-                            <span class="text-gray-700">${escapeHtml(opt)}</span>
-                            <input type="radio" name="${q.id}" value="${escapeHtml(opt)}" ${q.required ? 'required' : ''}>
-                        </label>
-                    `).join('')}
+                    ${q.options.map((opt, i) => `<label class="flex items-center justify-between p-2 hover:bg-gray-50 rounded cursor-pointer"><span class="text-gray-700">${escapeHtml(opt)}</span><input type="radio" name="${q.id}" value="${escapeHtml(opt)}" ${q.required ? 'required' : ''}></label>`).join('')}
                 </div>`;
             } else if (q.type === 'rating') {
-                inputHtml = `<div class="flex gap-2 rating-group">
-                    ${[1,2,3,4,5].map(v => `
-                        <label class="cursor-pointer">
-                            <input type="radio" name="${q.id}" value="${v}" class="peer sr-only" ${q.required ? 'required' : ''}>
-                            <i data-lucide="star" class="w-8 h-8 text-gray-300 peer-checked:text-yellow-400 peer-checked:fill-yellow-400 hover:text-yellow-200"></i>
-                        </label>
-                    `).join('')}
-                </div>`;
+                inputHtml = `<div class="flex gap-2 rating-group">${[1,2,3,4,5].map(v => `<label class="cursor-pointer"><input type="radio" name="${q.id}" value="${v}" class="peer sr-only" ${q.required ? 'required' : ''}><i data-lucide="star" class="w-8 h-8 text-gray-300 peer-checked:text-yellow-400 peer-checked:fill-yellow-400 hover:text-yellow-200"></i></label>`).join('')}</div>`;
             } else if (q.type === 'date') {
                  inputHtml = `<input type="date" name="${q.id}" class="p-2 border border-gray-300 rounded" ${q.required ? 'required' : ''}>`;
             } else if (q.type === 'nps') {
-                inputHtml = `<div class="flex flex-wrap gap-1">
-                     ${[0,1,2,3,4,5,6,7,8,9,10].map(s => `
-                        <label class="cursor-pointer">
-                             <input type="radio" name="${q.id}" value="${s}" class="peer sr-only" ${q.required ? 'required' : ''}>
-                             <div class="w-10 h-10 rounded border border-gray-300 flex items-center justify-center peer-checked:${theme.primary} peer-checked:text-white peer-checked:border-transparent hover:border-gray-800 transition">${s}</div>
-                        </label>
-                     `).join('')}
-                </div>`;
+                inputHtml = `<div class="flex flex-wrap gap-1">${[0,1,2,3,4,5,6,7,8,9,10].map(s => `<label class="cursor-pointer"><input type="radio" name="${q.id}" value="${s}" class="peer sr-only" ${q.required ? 'required' : ''}><div class="w-10 h-10 rounded border border-gray-300 flex items-center justify-center peer-checked:${theme.primary} peer-checked:text-white peer-checked:border-transparent hover:border-gray-800 transition">${s}</div></label>`).join('')}</div>`;
+            } else if (q.type === 'file') {
+                inputHtml = `
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
+                        <input type="file" accept="image/*,.pdf" onchange="window.handleFileSelect('${q.id}', this)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" ${q.required ? 'required' : ''}>
+                        <i data-lucide="upload-cloud" class="w-8 h-8 text-gray-400 mx-auto mb-2"></i>
+                        <div class="text-sm text-gray-500" id="file-name-${q.id}">Click to upload (Max 500KB)</div>
+                        <input type="hidden" name="${q.id}" id="file-data-${q.id}">
+                    </div>
+                `;
+            } else if (q.type === 'signature') {
+                inputHtml = `
+                    <div class="border border-gray-300 rounded-lg bg-white overflow-hidden">
+                        <canvas class="signature-pad w-full h-40" data-qid="${q.id}" width="600" height="160"></canvas>
+                        <div class="bg-gray-50 border-t border-gray-200 p-2 flex justify-between items-center text-xs text-gray-500">
+                            <span>Sign above</span>
+                            <button type="button" onclick="window.clearSignature('${q.id}')" class="text-red-500 hover:underline">Clear</button>
+                        </div>
+                        <input type="hidden" name="${q.id}" id="sig-data-${q.id}" ${q.required ? 'required' : ''}>
+                    </div>
+                `;
             }
 
             return `
@@ -824,64 +889,36 @@
         }
         
         // --- Logic & Branching ---
-        window.toggleLogicMenu = (qId) => {
-            state.logicMenuOpenId = qId;
-            render();
-        };
-
+        window.toggleLogicMenu = (qId) => { state.logicMenuOpenId = qId; render(); };
         window.updateLogicUI = (qId) => {
             const triggerQId = document.getElementById(`logic-q-${qId}`).value;
             const targetSelect = document.getElementById(`logic-v-${qId}`);
-            
-            if(!triggerQId) {
-                targetSelect.innerHTML = '<option disabled selected>Select question first</option>';
-                return;
-            }
-
+            if(!triggerQId) { targetSelect.innerHTML = '<option disabled selected>Select question first</option>'; return; }
             const triggerQ = state.currentForm.questions.find(q => q.id === triggerQId);
-            if(triggerQ) {
-                targetSelect.innerHTML = triggerQ.options.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
-            }
+            if(triggerQ) { targetSelect.innerHTML = triggerQ.options.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join(''); }
         };
 
         window.saveLogic = (qId) => {
             const triggerQId = document.getElementById(`logic-q-${qId}`).value;
             const value = document.getElementById(`logic-v-${qId}`).value;
-            
-            if(triggerQId && value) {
-                window.updateQuestion(qId, 'visibleIf', { questionId: triggerQId, value });
-                window.toggleLogicMenu(null);
-            } else {
-                alert("Please select both a question and an answer.");
-            }
+            if(triggerQId && value) { window.updateQuestion(qId, 'visibleIf', { questionId: triggerQId, value }); window.toggleLogicMenu(null); }
+            else { alert("Please select both a question and an answer."); }
         };
 
         window.evaluateLogic = () => {
             const form = state.currentForm || state.forms.find(f => f.id === state.activeFormId);
             if(!form) return;
-
             const fd = new FormData(document.getElementById('public-form'));
             const answers = {};
             for(let [k,v] of fd.entries()) answers[k] = v;
-
             form.questions.forEach(q => {
                 const container = document.getElementById(`question-container-${q.id}`);
                 if(!container) return;
-
                 if (q.visibleIf) {
                     const { questionId, value } = q.visibleIf;
-                    const triggerAnswer = answers[questionId];
-                    
-                    if (triggerAnswer === value) {
-                        container.style.display = 'block';
-                        container.querySelectorAll('input, select, textarea').forEach(el => el.disabled = false);
-                    } else {
-                        container.style.display = 'none';
-                        container.querySelectorAll('input, select, textarea').forEach(el => el.disabled = true);
-                    }
-                } else {
-                    container.style.display = 'block';
-                }
+                    if (answers[questionId] === value) { container.style.display = 'block'; container.querySelectorAll('input, select, textarea').forEach(el => el.disabled = false); } 
+                    else { container.style.display = 'none'; container.querySelectorAll('input, select, textarea').forEach(el => el.disabled = true); }
+                } else { container.style.display = 'block'; }
             });
         };
 
@@ -890,13 +927,10 @@
              if(state.role !== 'admin') { alert("Admin access required."); return; }
              state.view = 'results';
              state.activeFormId = formId;
-             
              const form = getLocalForms().find(f => f.id === formId);
              if (!form) { alert("Form not found"); mountDashboard(); return; }
-             
              state.currentForm = form;
              state.responses = getLocalResponses().filter(r => r.formId === formId);
-             
              render();
         }
 
@@ -939,11 +973,7 @@
                         
                         ${f.questions.map((q, i) => {
                              const counts = {};
-                             state.responses.forEach(r => {
-                                 const ans = r.answers[q.id];
-                                 if(ans) counts[ans] = (counts[ans] || 0) + 1;
-                             });
-                             
+                             state.responses.forEach(r => { const ans = r.answers[q.id]; if(ans) counts[ans] = (counts[ans] || 0) + 1; });
                              return `
                                 <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                                     <h3 class="font-semibold text-gray-800 mb-4 flex gap-2"><span class="text-gray-400">${i+1}.</span> ${escapeHtml(q.title)}</h3>
@@ -962,13 +992,12 @@
                                                         <div class="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
                                                             <div class="h-full ${isCorrect ? 'bg-green-500' : 'bg-blue-500'}" style="width: ${pct}%"></div>
                                                         </div>
-                                                    </div>
-                                                `;
+                                                    </div>`;
                                             }).join('')}
                                         </div>
-                                    ` : `
-                                        <div class="bg-gray-50 rounded p-4 text-sm text-gray-500 italic">Text/Date/Rating/Range responses are not visualized. Last answer: ${escapeHtml(state.responses[state.responses.length-1]?.answers[q.id] || '-')}</div>
-                                    `}
+                                    ` : (q.type === 'signature') ? 
+                                        `<div class="bg-gray-50 p-4 text-xs italic">Signatures captured. View in exported Excel.</div>` 
+                                    : `<div class="bg-gray-50 rounded p-4 text-sm text-gray-500 italic">Text/Date/File inputs not visualized. Last entry: ${escapeHtml(state.responses[state.responses.length-1]?.answers[q.id] ? 'Captured' : '-')}</div>`}
                                 </div>
                              `;
                         }).join('')}
@@ -987,7 +1016,7 @@
                 type,
                 theme: 'teal',
                 questions: [],
-                settings: { isQuiz: type === 'quiz', active: true, anonymous: true, allowMultiple: true, thankYouMessage: '' },
+                settings: { isQuiz: type === 'quiz', active: true, anonymous: true, allowMultiple: true, thankYouMessage: '', timeLimit: null, accessPassword: null },
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 authorId: state.user.uid
@@ -999,21 +1028,16 @@
         };
 
         window.duplicateForm = (e, id) => {
-            // Check if called from click event or directly
-            if (typeof e === 'string' && !id) id = e;
-            else if (e && e.stopPropagation) e.stopPropagation();
-
+            if (typeof e === 'string' && !id) id = e; else if (e && e.stopPropagation) e.stopPropagation();
             if(state.role !== 'admin') return;
             const forms = getLocalForms();
             const original = forms.find(f => f.id === id);
             if (!original) return;
-
             const copy = JSON.parse(JSON.stringify(original));
             copy.id = generateId();
             copy.title = `${copy.title} (Copy)`;
             copy.updatedAt = Date.now();
-            
-            forms.unshift(copy); // Add to top
+            forms.unshift(copy);
             saveLocalForms(forms);
             mountDashboard();
         };
@@ -1029,23 +1053,15 @@
         };
 
         window.openBuilder = (id) => mountBuilder(id);
-        window.openPreview = (id) => { 
-            state.activeFormId = id; 
-            state.view = 'preview'; 
-            render(); 
-        };
+        window.openPreview = (id) => { state.activeFormId = id; state.view = 'preview'; render(); };
         window.openResults = (id) => mountResults(id);
         window.loadDashboard = () => mountDashboard();
         
         window.setBuilderTab = (tab) => { state.builderTab = tab; render(); };
-        
         window.updateFormTitle = (val) => updateForm({ title: val });
         window.updateFormDesc = (val) => updateForm({ description: val });
         window.updateFormTheme = (id) => updateForm({ theme: id });
-        window.updateFormSetting = (key, val) => {
-             const s = { ...state.currentForm.settings, [key]: val };
-             updateForm({ settings: s });
-        };
+        window.updateFormSetting = (key, val) => { const s = { ...state.currentForm.settings, [key]: val }; updateForm({ settings: s }); };
         
         function updateForm(updates) {
              const updatedForm = { ...state.currentForm, ...updates, updatedAt: Date.now() };
@@ -1110,30 +1126,25 @@
         
         window.setCorrectAnswer = (qId, val) => window.updateQuestion(qId, 'correctAnswer', val);
         
-        // Viewer Actions - AUTO DOWNLOAD EXCEL ADDED HERE
+        // Viewer Actions
         window.submitForm = (e) => {
             e.preventDefault();
+            if(state.timerInterval) clearInterval(state.timerInterval);
             const fd = new FormData(e.target);
             const rawAnswers = {};
             for(let [k,v] of fd.entries()) rawAnswers[k] = v;
             
             const f = state.currentForm || state.forms.find(x => x.id === state.activeFormId);
-            
-            // Process Answers (Merge "Other" text)
             const finalAnswers = {};
             f.questions.forEach(q => {
                 let ans = rawAnswers[q.id];
-                if (ans === 'Other' && rawAnswers[`${q.id}_other_text`]) {
-                    ans = `Other: ${rawAnswers[`${q.id}_other_text`]}`;
-                }
+                if (ans === 'Other' && rawAnswers[`${q.id}_other_text`]) ans = `Other: ${rawAnswers[`${q.id}_other_text`]}`;
                 if (ans) finalAnswers[q.id] = ans;
             });
 
             let score = 0;
             if(f.settings.isQuiz) {
-                f.questions.forEach(q => {
-                    if(q.correctAnswer && finalAnswers[q.id] === q.correctAnswer) score += (q.points || 0);
-                });
+                f.questions.forEach(q => { if(q.correctAnswer && finalAnswers[q.id] === q.correctAnswer) score += (q.points || 0); });
             }
             
             const response = {
@@ -1146,32 +1157,27 @@
             
             saveLocalResponse(response);
 
-            // --- AUTO GENERATE EXCEL (CSV) FOR USER ---
+            // CSV Logic
             try {
                 const headers = ['Date Submitted', 'Form Title'];
                 if (f.settings.isQuiz) headers.push('Score');
                 f.questions.forEach(q => headers.push(q.title));
 
-                const row = [
-                    new Date().toLocaleString(),
-                    f.title
-                ];
+                const row = [ new Date().toLocaleString(), f.title ];
                 if (f.settings.isQuiz) row.push(score);
-                
                 f.questions.forEach(q => {
-                    row.push(finalAnswers[q.id] || '');
+                    let ans = finalAnswers[q.id] || '';
+                    if (ans.startsWith('data:image')) ans = "(Image Data)";
+                    row.push(ans);
                 });
 
                 const escapeCSV = (val) => {
                     const str = String(val || '');
-                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                        return `"${str.replace(/"/g, '""')}"`;
-                    }
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) return `"${str.replace(/"/g, '""')}"`;
                     return str;
                 };
 
                 const csvContent = headers.map(escapeCSV).join(',') + '\n' + row.map(escapeCSV).join(',');
-
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
@@ -1180,20 +1186,15 @@
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-
-            } catch (err) {
-                console.error("Error creating excel file:", err);
-            }
+            } catch (err) { console.error("Error creating excel file:", err); }
             
             const thankYouMsg = f.settings.thankYouMessage || 'Response submitted locally.';
-
             document.getElementById('app').innerHTML = `
                 <div class="h-full flex items-center justify-center bg-gray-50">
                     <div class="bg-white p-8 rounded-lg shadow-lg text-center max-w-md w-full">
                         <i data-lucide="check-circle" class="w-16 h-16 text-green-500 mx-auto mb-4"></i>
                         <h2 class="text-2xl font-bold text-gray-800">Thank You!</h2>
                         <p class="text-gray-600 mb-6 whitespace-pre-wrap">${escapeHtml(thankYouMsg)}</p>
-                        <p class="text-teal-600 text-sm mb-6 font-medium bg-teal-50 p-2 rounded border border-teal-100">Your response receipt has been downloaded.</p>
                         ${f.settings.isQuiz ? `<div class="text-4xl font-bold text-gray-900 mb-6">${score} / ${f.questions.reduce((a,q)=>a+(q.points||0),0)}</div>` : ''}
                         <button onclick="window.loadDashboard()" class="text-gray-500 hover:underline">Return Home</button>
                     </div>
@@ -1202,47 +1203,23 @@
             if(window.lucide) lucide.createIcons();
         };
 
-        // --- NEW: Excel Export Function (Admin) ---
         window.downloadResponsesCSV = () => {
             const f = state.currentForm;
             const responses = state.responses;
-            if(!responses || responses.length === 0) {
-                alert("No responses to download.");
-                return;
-            }
-
-            // Headers
+            if(!responses || responses.length === 0) { alert("No responses to download."); return; }
             const headers = ['Submitted At', 'User ID', 'Score'];
             f.questions.forEach(q => headers.push(q.title));
-
-            // Rows
             const rows = responses.map(r => {
-                const row = [
-                    new Date(r.submittedAt).toLocaleString(),
-                    r.userId,
-                    r.score || 0
-                ];
+                const row = [ new Date(r.submittedAt).toLocaleString(), r.userId, r.score || 0 ];
                 f.questions.forEach(q => {
-                    row.push(r.answers[q.id] || '');
+                    let ans = r.answers[q.id] || '';
+                    if (ans.startsWith('data:image')) ans = "(Image/Sig Data)";
+                    row.push(ans);
                 });
                 return row;
             });
-
-            // CSV Generation
-            const escape = (val) => {
-                const str = String(val || '');
-                if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                    return `"${str.replace(/"/g, '""')}"`;
-                }
-                return str;
-            };
-
-            const csvContent = [
-                headers.map(escape).join(','),
-                ...rows.map(r => r.map(escape).join(','))
-            ].join('\n');
-
-            // Download
+            const escape = (val) => { const str = String(val || ''); if (str.includes(',') || str.includes('"') || str.includes('\n')) return `"${str.replace(/"/g, '""')}"`; return str; };
+            const csvContent = [ headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(',')) ].join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
@@ -1253,32 +1230,16 @@
             document.body.removeChild(link);
         };
 
-        // --- Export Logic ---
-        function generateFormHTML(f) {
-            // Note: Simplified template for export
-            // Ideally, we would stringify all functions, but for a simple "Download HTML" feature
-            // we will just instruct the user that the offline builder is the main way to use this.
-            // For a standalone exported form, we would need to inline the entire script block above.
-            // Given the complexity of features added, we will export the current file content but inject the specific form data.
-            
-            alert("To host this form, simply host this 'index.html' file. The form data is saved in your browser's LocalStorage.");
-        }
-        
         window.downloadFormCode = () => {
             const htmlContent = document.documentElement.outerHTML;
             const blob = new Blob([htmlContent], { type: 'text/html' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `RiForm_Builder_v2.html`;
+            a.download = `RiForm_Builder_v3.html`;
             a.click();
             URL.revokeObjectURL(url);
         };
-        
-        window.copyFormCode = () => {
-             alert("Since v2.0, please use the 'Download' button to get the full application.");
-        };
-
     </script>
 </body>
 </html>
